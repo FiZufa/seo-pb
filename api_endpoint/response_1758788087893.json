@@ -1,0 +1,396 @@
+{
+  "status": "ok",
+  "processed": 1,
+  "errors": [],
+  "results": [
+    {
+      "index": 8258,
+      "url": "https://totalrenting.es/fichas-tecnicas/mitsubishi/carisma/carisma-1995/mitsubishi-carisma-hatchback-1-8-16v-gdi-122-cv/",
+      "metadata": {
+        "h1": [],
+        "h2": [
+          "característica review mitsubishi carisma hatchback gdi cv",
+          "precio mitsubishi carisma hatchback gdi cv",
+          "ficha técnico acabado medida",
+          "opinión usuario"
+        ],
+        "h3": [
+          "foto mitsubishi carisma hatchback gdi cv",
+          "exterior mitsubishi carisma hatchback gdi cv",
+          "interior mitsubishi carisma hatchback gdi cv",
+          "conectividad audio",
+          "vídeo destacado mitsubishi carisma hatchback gdi cv",
+          "noticia destacado mitsubishi carisma hatchback gdi cv",
+          "calcular seguro mitsubishi carisma hatchback gdi cv",
+          "modelo similar mitsubishi carisma hatchback gdi cv"
+        ],
+        "images": [
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/logo-total-renting.svg",
+            "alt": "Logo TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/tr-rojo.svg",
+            "alt": "Isologo TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/tr-blanco.svg",
+            "alt": "Isologo TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/whatsapp.svg",
+            "alt": "Whatsapp TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/prensa/el-pais-esp.svg",
+            "alt": "El País"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/prensa/El_Mundo_logo.svg",
+            "alt": "El Mundo"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/prensa/elEconomista.svg",
+            "alt": "elEconomista.es"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/prensa/motor-es-positivo.svg",
+            "alt": "Motor.es"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/prensa/logo-20m.svg",
+            "alt": "20 Minutos"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/prensa/marca.svg",
+            "alt": "Marca motor"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/banderas/it.png",
+            "alt": "TotalRenting Italia"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/banderas/pt.png",
+            "alt": "TotalRenting Portugal"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/facebook.svg",
+            "alt": "Facebook TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/instagram.svg",
+            "alt": "Facebook TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/blog.svg",
+            "alt": "Blog TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/whatsapp-b.svg",
+            "alt": "whatsapp TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/llamada.svg",
+            "alt": "Teléfono TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/whatsapp-b.svg",
+            "alt": "whatsapp TotalRenting"
+          },
+          {
+            "src": "https://totalrenting.es/wp-content/themes/totalRenting/assets/img/llamada.svg",
+            "alt": "Teléfono TotalRenting"
+          }
+        ]
+      },
+      "entities": {
+        "car_model": [
+          "mitsubishi carisma hatchback gdi cv"
+        ],
+        "features": [
+          "característica",
+          "ficha técnico",
+          "acabado",
+          "medida",
+          "conectividad audio"
+        ],
+        "user_opinion": [
+          "opinión usuario"
+        ],
+        "media": [
+          "foto",
+          "vídeo destacado",
+          "noticia destacado"
+        ],
+        "insurance": [
+          "calcular seguro"
+        ],
+        "similar_models": [
+          "modelo similar"
+        ]
+      },
+      "suggested_title": "Mitsubishi Carisma Hatchback GDI CV Review and Specifications",
+      "faq_pairs": [
+        {
+          "question": "What are the key features of the Mitsubishi Carisma Hatchback GDI CV?",
+          "answer": "The Mitsubishi Carisma Hatchback GDI CV includes various features such as connectivity audio and specific technical specifications."
+        },
+        {
+          "question": "How much does the Mitsubishi Carisma Hatchback GDI CV cost?",
+          "answer": "The price of the Mitsubishi Carisma Hatchback GDI CV can vary based on the model year and condition."
+        },
+        {
+          "question": "Where can I find user opinions on the Mitsubishi Carisma Hatchback GDI CV?",
+          "answer": "User opinions can be found in the dedicated section of our website discussing the Mitsubishi Carisma Hatchback GDI CV."
+        }
+      ],
+      "user_search_intent": "To find reviews, specifications, and pricing information for the Mitsubishi Carisma Hatchback GDI CV.",
+      "assigned_macro": {
+        "cluster_id": 0,
+        "cluster_name": "features, precio, seguro, modelo, conectividad",
+        "keywords": "features, precio, seguro, modelo, conectividad, vídeo, acabado, similar, usuario, calcular, medida, destacado, noticia, question, opinión",
+        "count": 202
+      },
+      "assigned_micro": {
+        "microcluster_id": 0,
+        "microcluster_name": "0_station_wagon_firesweep_explorer",
+        "keywords": "característica, técnico, similar, destacado, vídeo, foto, information, reviews, question, noticia",
+        "count": 25
+      },
+      "related_docs": [
+        {
+          "doc_id": "0225c634-2124-4225-b24a-17299842d4fd",
+          "url": "https://totalrenting.es/fichas-tecnicas/mini/hatch/hatch-2014/mini-hatch-jcw-2-0-231-cv/",
+          "suggested_title": "Revisión del Mini Hatch JCW CV: Características, Precio y Opiniones",
+          "user_search_intent": "información sobre el Mini Hatch JCW CV, incluyendo características, precio y opiniones de usuarios",
+          "entities": {
+            "precio": [
+              "mini hatch jcw cv"
+            ],
+            "seguros": [
+              "calcular seguro mini hatch jcw cv"
+            ],
+            "vídeos": [
+              "destacado mini hatch jcw cv"
+            ],
+            "exterior": [
+              "mini hatch jcw cv"
+            ],
+            "interior": [
+              "mini hatch jcw cv"
+            ],
+            "noticias": [
+              "destacado mini hatch jcw cv"
+            ],
+            "opiniones": [
+              "usuario"
+            ],
+            "conectividad": [
+              "audio"
+            ],
+            "características": [
+              "mini hatch jcw cv",
+              "acabado",
+              "medida"
+            ],
+            "modelos_similares": [
+              "modelo similar mini hatch jcw cv"
+            ]
+          },
+          "cluster_id": 0,
+          "microcluster_id": 17,
+          "similarity": 0.9154398441314697
+        },
+        {
+          "doc_id": "48c38155-d4bd-4bdf-8633-9f613f4f7830",
+          "url": "https://totalrenting.es/fichas-tecnicas/mini/hatch/hatch-2007/mini-hatch-one-1-6-75-cv/",
+          "suggested_title": "Revisión y características del Mini Hatch Onir CV",
+          "user_search_intent": "información sobre el Mini Hatch Onir CV",
+          "entities": {
+            "foto": [
+              "mini hatch onir cv"
+            ],
+            "modelo": [
+              "similar mini hatch onir cv"
+            ],
+            "precio": [
+              "mini hatch onir cv"
+            ],
+            "seguro": [
+              "mini hatch onir cv"
+            ],
+            "vídeo": [
+              "destacado mini hatch onir cv"
+            ],
+            "noticia": [
+              "destacado mini hatch onir cv"
+            ],
+            "exterior": [
+              "mini hatch onir cv"
+            ],
+            "interior": [
+              "mini hatch onir cv"
+            ],
+            "opiniones": [
+              "usuario"
+            ],
+            "conectividad": [
+              "audio"
+            ],
+            "ficha técnica": [
+              "acabado",
+              "medida"
+            ],
+            "características": [
+              "mini hatch onir cv"
+            ]
+          },
+          "cluster_id": 0,
+          "microcluster_id": 18,
+          "similarity": 0.9086295366287231
+        },
+        {
+          "doc_id": "06803da3-eec6-4c93-a162-fee170fde5c4",
+          "url": "https://totalrenting.es/fichas-tecnicas/mini/hatch/hatch-2014/mini-hatch-one-1-2-102-cv/",
+          "suggested_title": "Revisión y características del Mini Hatch Onir CV",
+          "user_search_intent": "Información sobre el Mini Hatch Onir CV, incluyendo características, precio y opiniones.",
+          "entities": {
+            "foto": [
+              "mini hatch onir cv"
+            ],
+            "precio": [
+              "mini hatch onir cv"
+            ],
+            "seguro": [
+              "calcular seguro mini hatch onir cv"
+            ],
+            "vídeo": [
+              "destacado mini hatch onir cv"
+            ],
+            "noticia": [
+              "destacado mini hatch onir cv"
+            ],
+            "exterior": [
+              "mini hatch onir cv"
+            ],
+            "interior": [
+              "mini hatch onir cv"
+            ],
+            "opiniones": [
+              "usuario"
+            ],
+            "conectividad": [
+              "audio"
+            ],
+            "ficha_técnica": [
+              "acabado",
+              "medida"
+            ],
+            "modelo_similar": [
+              "mini hatch onir cv"
+            ],
+            "características": [
+              "mini hatch onir cv"
+            ]
+          },
+          "cluster_id": 0,
+          "microcluster_id": 18,
+          "similarity": 0.9086295366287231
+        },
+        {
+          "doc_id": "db0f21b9-930a-4b46-93d5-96d4dd8e095e",
+          "url": "https://totalrenting.es/fichas-tecnicas/mini/hatch/hatch-2018/mini-hatch-one-1-5-102-cv/",
+          "suggested_title": "Mini Hatch Onir CV: Características, Precio y Opiniones",
+          "user_search_intent": "Información sobre características, precio y opiniones del Mini Hatch Onir CV",
+          "entities": {
+            "precio": [
+              "mini hatch onir cv"
+            ],
+            "seguro": [
+              "calcular seguro mini hatch onir cv"
+            ],
+            "vídeo": [
+              "destacado mini hatch onir cv"
+            ],
+            "noticia": [
+              "destacado mini hatch onir cv"
+            ],
+            "exterior": [
+              "mini hatch onir cv"
+            ],
+            "interior": [
+              "mini hatch onir cv"
+            ],
+            "opiniones": [
+              "usuario"
+            ],
+            "conectividad": [
+              "audio"
+            ],
+            "ficha técnica": [
+              "acabado",
+              "medida"
+            ],
+            "modelo similar": [
+              "mini hatch onir cv"
+            ],
+            "características": [
+              "mini hatch onir cv"
+            ]
+          },
+          "cluster_id": 0,
+          "microcluster_id": 18,
+          "similarity": 0.9067085385322571
+        },
+        {
+          "doc_id": "011d837a-fd3e-43aa-85c3-c5932435ddaa",
+          "url": "https://totalrenting.es/fichas-tecnicas/mini/hatch/hatch-2007/mini-hatch-one-1-6-98-cv/",
+          "suggested_title": "Revisión del Mini Hatch Onir CV: Características, Precio y Opiniones de Usuarios",
+          "user_search_intent": "información sobre el Mini Hatch Onir CV, incluyendo características, precio y opiniones",
+          "entities": {
+            "precio": [
+              "mini hatch onir cv"
+            ],
+            "seguro": [
+              "calcular seguro mini hatch onir cv"
+            ],
+            "vídeo": [
+              "destacado mini hatch onir cv"
+            ],
+            "noticia": [
+              "destacado mini hatch onir cv"
+            ],
+            "exterior": [
+              "mini hatch onir cv"
+            ],
+            "interior": [
+              "mini hatch onir cv"
+            ],
+            "opiniones": [
+              "usuario"
+            ],
+            "fotografía": [
+              "mini hatch onir cv"
+            ],
+            "conectividad": [
+              "audio"
+            ],
+            "ficha técnica": [
+              "acabado",
+              "medida"
+            ],
+            "modelo similar": [
+              "mini hatch onir cv"
+            ],
+            "características": [
+              "mini hatch onir cv"
+            ]
+          },
+          "cluster_id": 0,
+          "microcluster_id": 18,
+          "similarity": 0.8968620300292969
+        }
+      ]
+    }
+  ]
+}
