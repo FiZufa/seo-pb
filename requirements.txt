@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+psycopg2-binary
+pandas
+numpy
+torch
+transformers
+openai
+spacy
+sqlalchemy
+python-dotenv
+scikit-learn
+umap-learn
+hdbscan
+supabase
