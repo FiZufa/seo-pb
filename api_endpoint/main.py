@@ -56,13 +56,13 @@ SUPABASE_DB_KEY = os.getenv("SUPABASE_DB_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Tables in Supabase:
-DATA_TEXT_TABLE = "public.data_text"
-DATA_VECTOR_TABLE = "vecs.data_vector"
-CLUSTER_ASSIGNMENTS_TABLE = "public.cluster_assignments"
-CLUSTER_MACRO_TABLE = "cluster_macro2"
-CLUSTER_MACRO_TABLE_PUBLIC = "public.cluster_macro2"
-CLUSTER_MICRO_TABLE = "cluster_micro2"
-CLUSTER_MICRO_TABLE_PUBLIC = "public.cluster_micro2"
+DATA_TEXT_TABLE = os.getenv("DATA_TEXT_TABLE", "public.data_text")
+DATA_VECTOR_TABLE = os.getenv("DATA_VECTOR_TABLE", "vecs.data_vector")
+CLUSTER_ASSIGNMENTS_TABLE = os.getenv("CLUSTER_ASSIGNMENTS_TABLE", "public.cluster_assignments_2")
+CLUSTER_MACRO_TABLE = os.getenv("CLUSTER_MACRO_TABLE", "cluster_macro5")
+CLUSTER_MACRO_TABLE_PUBLIC = os.getenv("CLUSTER_MACRO_TABLE_PUBLIC", "public.cluster_macro5")
+CLUSTER_MICRO_TABLE = os.getenv("CLUSTER_MICRO_TABLE", "cluster_micro4")
+CLUSTER_MICRO_TABLE_PUBLIC = os.getenv("CLUSTER_MICRO_TABLE_PUBLIC", "public.cluster_micro4")
 
 # ==========================
 # Init models & DB
@@ -707,7 +707,8 @@ async def text_represent_micro():
     """
     - Represent a microcluster of documents.
     - Summarizes and labels microclusters using LLM.
-    - Data is retrieved from Supabase tables: data_text, cluster_micro, cluster_assignments.
+    - Data is retrieved from Supabase tables: data_text, cluster_micro, cluster_macro, cluster_assignments.
+    - Saves results to Supabase tables: cluster_micro.
 
     - **Args**:
         None
@@ -766,26 +767,72 @@ async def text_represent_micro():
     - The microcluster name should be broad enough to describe the set, but specific enough to distinguish it.
     """.strip()
 
-    # Summarize a microcluster subset
-    def summarize_microcluster(df_subset: pd.DataFrame, cluster_id: int, micro_id: Any,
-                           batch_size: int = 25) -> Dict[str, Any]:
+    def mmr_select(df_local, top_k=10, lambda_param=0.5):
         """
-        Summarize a microcluster based on its size. 
-        Handles small, medium, and large microclusters differently.
+        Maximal Marginal Relevance (MMR) selection.
+        Picks top_k docs that are both relevant to centroid and diverse.
 
+        Args:
+            df_local (pd.DataFrame): The local dataframe with embeddings.
+            top_k (int): Number of documents to select.
+            lambda_param (float): Trade-off parameter between relevance and diversity.
+        
+        Returns:
+            pd.DataFrame: The selected subset of documents.
+        """
+        embeddings = np.vstack(df_local["__emb"].values)
+        centroid = embeddings.mean(axis=0)
+
+        selected = []
+        candidates = list(range(len(df_local)))
+
+        # Precompute similarities
+        sim_to_centroid = embeddings @ centroid / (
+            np.linalg.norm(embeddings, axis=1) * np.linalg.norm(centroid)
+        )
+
+        while len(selected) < top_k and candidates:
+            if not selected:
+                # Pick the most central first
+                idx = int(np.argmax(sim_to_centroid[candidates]))
+                chosen = candidates[idx]
+            else:
+                chosen = None
+                best_score = -1e9
+                for c in candidates:
+                    # relevance = sim to centroid
+                    relevance = sim_to_centroid[c]
+                    # diversity = max sim to already chosen
+                    div = max(
+                        np.dot(embeddings[c], embeddings[s]) /
+                        (np.linalg.norm(embeddings[c]) * np.linalg.norm(embeddings[s]))
+                        for s in selected
+                    )
+                    score = lambda_param * relevance - (1 - lambda_param) * div
+                    if score > best_score:
+                        best_score = score
+                        chosen = c
+            selected.append(chosen)
+            candidates.remove(chosen)
+
+        return df_local.iloc[selected]
+
+
+    # Summarize a microcluster subset
+    def summarize_microcluster(df_subset: pd.DataFrame, cluster_id: int, micro_id: Any) -> Dict[str, Any]:
+        """
+        Summarize a microcluster of documents.
         Args:
             df_subset (pd.DataFrame): The subset of documents in the microcluster.
             cluster_id (int): The macro cluster ID.
             micro_id (Any): The micro cluster ID.
-            batch_size (int): The batch size for large microclusters.
+            batch_size (int): The maximum number of documents to include in the prompt.
 
         Returns:
-            dict: A dictionary containing the mode, prompts, and info about the summarization.  
+            Dict[str, Any]: A dictionary containing the summarization results and metadata.
         """
-
         result = {"mode": None, "prompts": [], "info": {}}
         n = len(df_subset)
-
         if n == 0:
             result["mode"] = "empty"
             result["info"] = {"n_docs": 0}
@@ -797,39 +844,18 @@ async def text_represent_micro():
 
         if n < 10:
             result["mode"] = "small"
-            result["prompts"].append({
-                "prompt_id": f"{micro_id}_all",
-                "prompt": build_micro_prompt(df_local, cluster_id, micro_id),
-                "doc_indices": df_local["index"].tolist(),
-                "doc_ids": df_local["id"].tolist()
-            })
-            result["info"]["selection"] = "all_docs"
-
-        elif n <= 30:
-            result["mode"] = "medium"
-            emb_stack = np.vstack(df_local["__emb"].values)
-            centroid = emb_stack.mean(axis=0)
-            df_local["__dist"] = df_local["__emb"].apply(lambda v: np.linalg.norm(v - centroid))
-            top_df = df_local.nsmallest(10, "__dist")
-            result["prompts"].append({
-                "prompt_id": f"{micro_id}_top10",
-                "prompt": build_micro_prompt(top_df, cluster_id, micro_id),
-                "doc_indices": top_df["index"].tolist(),
-                "doc_ids": top_df["id"].tolist()
-            })
-            result["info"]["selection"] = "topk_centroid"
-
+            chosen = df_local
         else:
-            result["mode"] = "large"
-            batches = np.array_split(df_local, math.ceil(n / batch_size))
-            for idx, batch in enumerate(batches, start=1):
-                result["prompts"].append({
-                    "prompt_id": f"{micro_id}_part{idx}",
-                    "prompt": build_micro_prompt(batch, cluster_id, f"{micro_id}_part{idx}"),
-                    "doc_indices": batch["index"].tolist(),
-                    "doc_ids": batch["id"].tolist()
-                })
-            result["info"]["selection"] = "batches"
+            result["mode"] = "large_mmr"
+            chosen = mmr_select(df_local, top_k=10, lambda_param=0.5)
+
+        result["prompts"].append({
+            "prompt_id": f"{micro_id}_final",
+            "prompt": build_micro_prompt(chosen, cluster_id, micro_id),
+            "doc_indices": chosen["index"].tolist(),
+            "doc_ids": chosen["id"].tolist()
+        })
+        result["info"]["selection"] = result["mode"]
 
         return result
 
@@ -892,6 +918,12 @@ async def text_represent_micro():
         JOIN {DATA_TEXT_TABLE} d ON d.id = ca.doc_id
         JOIN {DATA_VECTOR_TABLE} v ON v.id = ca.doc_id
         """
+
+        # Re-connect to ensure fresh connection
+
+        engine = create_engine(SUPABASE_DB_URL)
+        print("✅ Connected to Supabase")
+        print("\n🚀 Processing microclusters...")
         
         df = pd.read_sql(sql_all, engine)
 
@@ -928,10 +960,8 @@ async def text_represent_micro():
         print(df.head())
 
         # 3. Summarize each microcluster
-        prompts = []
-
         for (cluster_id, micro_id), df_subset in df.groupby(["cluster_id", "microcluster_id"]):
-            results = summarize_microcluster(df_subset, cluster_id, micro_id, batch_size=25)
+            results = summarize_microcluster(df_subset, cluster_id, micro_id)
             first_prompt = results["prompts"][0] if results["prompts"] else None
 
             if not first_prompt:
@@ -1095,7 +1125,35 @@ async def text_represent_macro():
     """.strip()
 
         return prompt
-    
+
+    def split_balanced(n: int, min_size: int = 10, max_size: int = 20):
+        """
+        Split n documents into batches of nearly equal size (difference ≤ 1).
+        - If n <= min_size → single batch.
+        - Otherwise, choose number of batches so that each batch size is within [min_size, max_size].
+
+        Args:
+            n (int): Total number of documents.
+            min_size (int): Minimum size of each batch.
+            max_size (int): Maximum size of each batch.
+
+        Returns:
+            list: A list of batch sizes.
+        """
+        if n <= min_size:
+            return [n]
+
+        # Try different batch counts (prefer fewer batches)
+        for k in range(1, n + 1):
+            base = n // k
+            remainder = n % k
+            if base < min_size:  # batches would get too small
+                break
+            if base <= max_size:
+                # Distribute remainder evenly
+                sizes = [base + 1] * remainder + [base] * (k - remainder)
+                return sizes
+            
 
     # Summarize macrocluster
     def save_macrocluster_result(cluster_id: int, final_result: dict):
@@ -1137,6 +1195,56 @@ async def text_represent_macro():
         result = supabase.table(CLUSTER_MACRO_TABLE).upsert(data).execute()
         print("✅ Saved to Supabase:", result)
 
+    # Summarize a macrocluster with batching and reduction
+    def summarize_macrocluster(cluster_id: int):
+        """
+        Summarize a macrocluster by processing its microclusters in batches.
+        
+        Args:
+            cluster_id (int): The macro cluster ID.
+
+        Returns:
+            dict: The summarized result for the macrocluster.
+        """
+
+        microclusters = get_microclusters_for_cluster(cluster_id)
+        if not microclusters:
+            return {}
+
+        # Stage 1: split into balanced batches
+        n = len(microclusters)
+        batch_sizes = split_balanced(n)
+        batch_results = []
+
+        idx = 0
+        # Summarize each batch
+        for i, size in enumerate(batch_sizes, start=1):
+            batch_microclusters = microclusters[idx: idx + size]
+            idx += size
+
+            prompt_text = build_macro_prompt(cluster_id, batch_microclusters, batch_id=i)
+            print("\n" + "=" * 60)
+            print(f"⚡ Running LLM for {cluster_id}_batch{i} ({len(batch_microclusters)} microclusters)")
+            llm_result = run_llm(prompt_text)
+            batch_results.append({"prompt_id": f"{cluster_id}_batch{i}", "llm_result": llm_result})
+
+        # Stage 2: reduce if multiple batches
+        if len(batch_results) > 1:
+            reduce_prompt = build_reduce_prompt(cluster_id, batch_results)
+            print("\n⚡ Running LLM for FINAL REDUCE step")
+            final_result = run_llm(reduce_prompt)
+        else:
+            final_result = batch_results[0]["llm_result"]
+
+        # Save into Supabase
+        save_macrocluster_result(cluster_id, final_result)
+
+        return {
+            "cluster_id": cluster_id,
+            "batch_results": batch_results,
+            "final_result": final_result
+        }
+
     try:
         # 1. Fetch macroclusters
         response = supabase.table(CLUSTER_MACRO_TABLE).select("cluster_id").execute()
@@ -1155,34 +1263,8 @@ async def text_represent_macro():
             n = len(microclusters)
             print(f"\n🚀 Processing Macrocluster {cluster_id} with {n} microclusters")
 
-            batch_size = 25
-            batch_results = []
-
-            if n <= batch_size:
-                prompt = build_macro_prompt(cluster_id, microclusters)
-                llm_result = run_llm(prompt)
-                batch_results.append({
-                    "batch_id": 1,
-                    "llm_result": llm_result
-                })
-            else:
-                batches = np.array_split(microclusters, math.ceil(n / batch_size))
-                for idx, batch in enumerate(batches, start=1):
-                    prompt = build_macro_prompt(cluster_id, batch, batch_id=idx)
-                    llm_result = run_llm(prompt)
-                    batch_results.append({
-                        "batch_id": idx,
-                        "llm_result": llm_result
-                    })
-
-            # Reduce step
-            if len(batch_results) == 1:
-                final_result = batch_results[0]["llm_result"]
-            else:
-                reduce_prompt = build_reduce_prompt(cluster_id, batch_results)
-                final_result = run_llm(reduce_prompt)
-
-            save_macrocluster_result(cluster_id, final_result)
+            result = summarize_macrocluster(cluster_id)
+            print(f"✅ Completed Macrocluster {cluster_id}")
 
         return JSONResponse(content={"status": "success", "processed_clusters": len(cluster_ids)})
     
