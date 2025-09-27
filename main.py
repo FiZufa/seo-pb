@@ -7,7 +7,7 @@ Endpoints:
     - POST /run_clustering: Perform macro and micro clustering on document embeddings.
     - POST /text_represent_micro: Summarize and label microclusters using LLM
     - POST /text_represent_macro: Summarize and label macroclusters using LLM
-    - GET /search: Search documents based on query embedding and return top results.
+    - POST /search: Search documents based on query embedding and return top results.
 """
 
 import math
@@ -56,8 +56,8 @@ SUPABASE_DB_KEY = os.getenv("SUPABASE_DB_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Tables in Supabase:
-DATA_TEXT_TABLE = os.getenv("DATA_TEXT_TABLE", "public.data_text")
-DATA_VECTOR_TABLE = os.getenv("DATA_VECTOR_TABLE", "vecs.data_vector")
+DATA_TEXT_TABLE = os.getenv("DATA_TEXT_TABLE", "public.data_text_xx")
+DATA_VECTOR_TABLE = os.getenv("DATA_VECTOR_TABLE", "vecs.data_vector_xx")
 CLUSTER_ASSIGNMENTS_TABLE = os.getenv("CLUSTER_ASSIGNMENTS_TABLE", "public.cluster_assignments_2")
 CLUSTER_MACRO_TABLE = os.getenv("CLUSTER_MACRO_TABLE", "cluster_macro5")
 CLUSTER_MACRO_TABLE_PUBLIC = os.getenv("CLUSTER_MACRO_TABLE_PUBLIC", "public.cluster_macro5")
@@ -94,12 +94,62 @@ engine = create_engine(SUPABASE_DB_URL)
 cur = conn.cursor()
 print("✅ Connected to Supabase")
 
+
 # FastAPI app
 app = FastAPI()
 
 # ==========================
 # Helper functions
 # ==========================
+
+# Ensure tables exist
+def ensure_tables():
+    """
+    Ensure necessary tables and extensions exist in the database.
+    Creates tables if they do not exist.
+    """
+    try:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        cur.execute("CREATE SCHEMA IF NOT EXISTS vecs;")
+
+        cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {DATA_TEXT_TABLE} (
+            id uuid not null,
+            url text null,
+            suggested_title text null,
+            user_search_intent text null,
+            metadata_h1 text[] null,
+            metadata_h2 text[] null,
+            metadata_h3 text[] null,
+            faq_pairs jsonb null,
+            entities jsonb null,
+            created_at timestamp with time zone null default now(),
+            constraint data_text_xx_pkey primary key (id)
+        );
+        """)
+
+        cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {DATA_VECTOR_TABLE} (
+            id uuid not null,
+            suggested_title public.vector null,
+            metadata public.vector null,
+            user_search_intent public.vector null,
+            faq_pairs public.vector null,
+            entities public.vector null,
+            combined_embedding public.vector null,
+            constraint data_vector_xx_pkey primary key (id),
+            constraint data_vector_xx_id_fkey foreign KEY (id) references public.data_text_xx (id)
+        );
+        """)
+
+        conn.commit()
+        print("✅ Tables & extension are ready (created if missing).")
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Error ensuring tables: {e}")
+
+# Ensure tables exist
+ensure_tables()
 
 # ---------- Get Embedding ----------
 def get_embedding(text: str):
@@ -297,6 +347,7 @@ def run_llm(prompt: str) -> dict:
     except json.JSONDecodeError:
         return {"raw": raw_text}
     
+    
 
 # ==========================
 # API Endpoints
@@ -361,29 +412,46 @@ async def enrich_embedding(file: UploadFile = File(...)):
             record.get("metadata", {}).get("h3", []),
             Json(record.get("faq_pairs", [])),
             Json(record.get("entities", {})),
-            now 
+            now
         ))
 
+        # --- Build embeddings ---
         title_vec = get_embedding(record.get("suggested_title", ""))
         intent_vec = get_embedding(record.get("user_search_intent", ""))
+
         metadata_parts = []
         for lvl in ["h1", "h2", "h3"]:
             metadata_parts.extend(record.get("metadata", {}).get(lvl, []))
         metadata_vec = get_embedding(" ".join(metadata_parts))
-        faq_vec = get_embedding(" ".join([f"Q:{p['question']} A:{p['answer']}" for p in record.get("faq_pairs", [])]))
-        entities_vec = get_embedding(" ".join([f"{k}: {v}" for k, v in record.get("entities", {}).items()]))
 
+        faq_texts = []
+        for pair in record.get("faq_pairs", []):
+            q = pair.get("question", "")
+            a = pair.get("answer", "")
+            if q or a:
+                faq_texts.append(f"Q: {q} A: {a}")
+        faq_vec = get_embedding(" ".join(faq_texts))
+
+        entities_text = " ".join([f"{k}: {v}" for k, v in record.get("entities", {}).items()])
+        entities_vec = get_embedding(entities_text)
+
+        # --- Build combined embedding (mean of available vectors) ---
+        vecs = [v for v in [title_vec, metadata_vec, intent_vec, faq_vec, entities_vec] if v is not None]
+        combined_vec = np.mean(vecs, axis=0).astype(np.float32) if vecs else None
+
+        # --- Save embeddings into vecs.data_vector_y ---
         cur.execute(f"""
             INSERT INTO {DATA_VECTOR_TABLE} (
-                id, suggested_title, metadata, user_search_intent, faq_pairs, entities
-            ) VALUES (%s,%s,%s,%s,%s,%s)
+                id, suggested_title, metadata, user_search_intent, faq_pairs, entities, combined_embedding
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (
             doc_id,
             title_vec.tolist() if title_vec is not None else None,
             metadata_vec.tolist() if metadata_vec is not None else None,
             intent_vec.tolist() if intent_vec is not None else None,
             faq_vec.tolist() if faq_vec is not None else None,
-            entities_vec.tolist() if entities_vec is not None else None
+            entities_vec.tolist() if entities_vec is not None else None,
+            combined_vec.tolist() if combined_vec is not None else None
         ))
 
         conn.commit()
@@ -467,11 +535,7 @@ async def run_clustering():
         # Tables: data_text, data_vector
         query = f"""
         SELECT v.id,
-               v.suggested_title AS suggested_title_embedding,
-               v.metadata AS metadata_embedding,
-               v.user_search_intent AS user_search_intent_embedding,
-               v.faq_pairs AS faq_pairs_embedding,
-               v.entities AS entities_embedding,
+               v.combined_embedding AS combined_embedding,
                d.url,
                d.suggested_title AS suggested_title_text,
                d.user_search_intent AS user_search_intent_text,
@@ -490,21 +554,7 @@ async def run_clustering():
             return JSONResponse(content={"status": "error", "message": "No data found"}, status_code=400)
 
         # 2. Convert embeddings
-        for col in ["suggested_title_embedding", "metadata_embedding",
-                    "user_search_intent_embedding", "faq_pairs_embedding",
-                    "entities_embedding"]:
-            df[col] = df[col].apply(parse_embedding)
-
-        df["combined_embedding"] = df.apply(
-            lambda row: np.mean([
-                row["suggested_title_embedding"],
-                row["metadata_embedding"],
-                row["user_search_intent_embedding"],
-                row["faq_pairs_embedding"],
-                row["entities_embedding"]
-            ], axis=0),
-            axis=1
-        )
+        df["combined_embedding"] = df["combined_embedding"].apply(parse_embedding)
 
         # 3. Macro clustering
         X = np.vstack(df['combined_embedding'].values)
@@ -909,20 +959,12 @@ async def text_represent_micro():
         d.suggested_title AS suggested_title_text,
         d.user_search_intent AS user_search_intent_text,
         d.entities AS entities_text,
-        v.suggested_title AS suggested_title_embedding,
-        v.metadata AS metadata_embedding,
-        v.user_search_intent AS user_search_intent_embedding,
-        v.faq_pairs AS faq_pairs_embedding,
-        v.entities AS entities_embedding
+        v.combined_embedding AS combined_embedding
         FROM {CLUSTER_ASSIGNMENTS_TABLE} ca
         JOIN {DATA_TEXT_TABLE} d ON d.id = ca.doc_id
         JOIN {DATA_VECTOR_TABLE} v ON v.id = ca.doc_id
         """
 
-        # Re-connect to ensure fresh connection
-
-        engine = create_engine(SUPABASE_DB_URL)
-        print("✅ Connected to Supabase")
         print("\n🚀 Processing microclusters...")
         
         df = pd.read_sql(sql_all, engine)
@@ -930,28 +972,7 @@ async def text_represent_micro():
         print(f"✅ Fetched {len(df)} rows from Supabase")
 
         # 2. Preprocess embeddings
-        for col in [
-            "suggested_title_embedding",
-            "metadata_embedding",
-            "user_search_intent_embedding",
-            "faq_pairs_embedding",
-            "entities_embedding",
-        ]:
-            df[col] = df[col].apply(parse_embedding)
-
-        df["combined_embedding"] = df.apply(
-            lambda r: np.mean(
-                [
-                    r["suggested_title_embedding"],
-                    r["metadata_embedding"],
-                    r["user_search_intent_embedding"],
-                    r["faq_pairs_embedding"],
-                    r["entities_embedding"],
-                ],
-                axis=0,
-            ),
-            axis=1,
-        )
+        df["combined_embedding"] = df["combined_embedding"].apply(parse_embedding)
 
         # Handle None in text fields
         df["entities_text"] = df["entities_text"].apply(lambda x: str(x) if x is not None else "")
@@ -1348,6 +1369,7 @@ async def search_cluster(file: UploadFile = File(...)):
         Returns:
             dict: The classification result with assigned clusters and related documents.
         """
+        # Embed
         emb = embed_record(record).reshape(1, -1)
 
         # Macro
