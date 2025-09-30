@@ -12,7 +12,7 @@ Endpoints:
 
 import math
 from xml.parsers.expat import errors
-from fastapi import FastAPI, UploadFile, File, Query, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Query, Body, HTTPException, Header
 from fastapi.encoders import jsonable_encoder
 from typing import Any, List, Optional, Dict
 from fastapi.responses import JSONResponse
@@ -56,13 +56,13 @@ SUPABASE_DB_KEY = os.getenv("SUPABASE_DB_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Tables in Supabase:
-DATA_TEXT_TABLE = os.getenv("DATA_TEXT_TABLE", "public.data_text_xx")
-DATA_VECTOR_TABLE = os.getenv("DATA_VECTOR_TABLE", "vecs.data_vector_xx")
-CLUSTER_ASSIGNMENTS_TABLE = os.getenv("CLUSTER_ASSIGNMENTS_TABLE", "public.cluster_assignments_2")
-CLUSTER_MACRO_TABLE = os.getenv("CLUSTER_MACRO_TABLE", "cluster_macro5")
-CLUSTER_MACRO_TABLE_PUBLIC = os.getenv("CLUSTER_MACRO_TABLE_PUBLIC", "public.cluster_macro5")
-CLUSTER_MICRO_TABLE = os.getenv("CLUSTER_MICRO_TABLE", "cluster_micro4")
-CLUSTER_MICRO_TABLE_PUBLIC = os.getenv("CLUSTER_MICRO_TABLE_PUBLIC", "public.cluster_micro4")
+DATA_TEXT_TABLE = os.getenv("DATA_TEXT_TABLE", "data_text")
+DATA_VECTOR_TABLE = os.getenv("DATA_VECTOR_TABLE", "data_vector")
+CLUSTER_ASSIGNMENTS_TABLE = os.getenv("CLUSTER_ASSIGNMENTS_TABLE", "cluster_assignments")
+CLUSTER_MACRO_TABLE = os.getenv("CLUSTER_MACRO_TABLE", "cluster_macro")
+CLUSTER_MACRO_TABLE_PUBLIC = os.getenv("CLUSTER_MACRO_TABLE_PUBLIC", "cluster_macro")
+CLUSTER_MICRO_TABLE = os.getenv("CLUSTER_MICRO_TABLE", "cluster_micro")
+CLUSTER_MICRO_TABLE_PUBLIC = os.getenv("CLUSTER_MICRO_TABLE_PUBLIC", "cluster_micro")
 
 # ==========================
 # Init models & DB
@@ -103,17 +103,22 @@ app = FastAPI()
 # ==========================
 
 # Ensure tables exist
-def ensure_tables():
+def ensure_tables_enrich_embedd(client_name: str):
     """
     Ensure necessary tables and extensions exist in the database.
     Creates tables if they do not exist.
     """
     try:
+        text_table = f"{client_name}_{DATA_TEXT_TABLE}"   # just table name
+        vector_table = f"{client_name}_{DATA_VECTOR_TABLE}"
+
+        print("🔹 Ensuring database tables exist...")
         cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
         cur.execute("CREATE SCHEMA IF NOT EXISTS vecs;")
 
+        # public schema for text
         cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS {DATA_TEXT_TABLE} (
+        CREATE TABLE IF NOT EXISTS public.{text_table} (
             id uuid not null,
             url text null,
             suggested_title text null,
@@ -124,21 +129,23 @@ def ensure_tables():
             faq_pairs jsonb null,
             entities jsonb null,
             created_at timestamp with time zone null default now(),
-            constraint data_text_xx_pkey primary key (id)
+            constraint {text_table}_pkey primary key (id)
         );
         """)
 
+        # vecs schema for vectors
         cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS {DATA_VECTOR_TABLE} (
+        CREATE TABLE IF NOT EXISTS vecs.{vector_table} (
             id uuid not null,
-            suggested_title public.vector null,
-            metadata public.vector null,
-            user_search_intent public.vector null,
-            faq_pairs public.vector null,
-            entities public.vector null,
-            combined_embedding public.vector null,
-            constraint data_vector_xx_pkey primary key (id),
-            constraint data_vector_xx_id_fkey foreign KEY (id) references public.data_text_xx (id)
+            suggested_title vector null,
+            metadata vector null,
+            user_search_intent vector null,
+            faq_pairs vector null,
+            entities vector null,
+            combined_embedding vector null,
+            constraint {vector_table}_pkey primary key (id),
+            constraint {vector_table}_id_fkey foreign key (id) 
+                references public.{text_table} (id)
         );
         """)
 
@@ -148,8 +155,77 @@ def ensure_tables():
         conn.rollback()
         print(f"❌ Error ensuring tables: {e}")
 
-# Ensure tables exist
-ensure_tables()
+
+
+def ensure_tables_exist(client_name: str, table: str, schema: str = "public"):
+    """
+    Ensure that a table exists in the given schema for a specific client.
+    Raises 400 if the table does not exist.
+    """
+    try:
+        table_name = f"{client_name}_{table}"
+
+        print(f"🔹 Ensuring database table '{schema}.{table_name}' exists...")
+
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 
+                FROM information_schema.tables 
+                WHERE table_schema = %s 
+                AND table_name = %s
+            );
+        """, (schema, table_name))
+
+        exists = cur.fetchone()[0]
+
+        if not exists:
+            # Table missing
+            raise HTTPException(
+                status_code=400,
+                detail=f"Table '{schema}.{table_name}' does not exist for client {client_name}"
+            )
+
+        print(f"✅ Table '{schema}.{table_name}' exists.")
+
+    except HTTPException:
+        # re-raise cleanly if we already raised one
+        raise
+    except Exception as e:
+        print(f"❌ Error checking table '{schema}.{table_name}': {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error checking table '{schema}.{table_name}': {e}"
+        )
+
+
+# Check if table is duplicate in database
+def check_table_duplicate(table_name: str, schema: str = "public") -> bool:
+    """
+    Check if a table already exists in the given schema.
+    Raises an exception if the table exists.
+    Returns False if the table does not exist.
+    """
+    try:
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = %s
+                AND table_name = %s
+            );
+        """, (schema, table_name))
+
+        exists = cur.fetchone()[0]
+
+        if exists:
+            raise Exception(f"⚠️ Table '{schema}.{table_name}' already exists. Aborting creation.")
+        else:
+            print(f"✅ Table '{schema}.{table_name}' does not exist yet.")
+            return False
+
+    except Exception as e:
+        print(f"❌ Error checking table '{schema}.{table_name}': {e}")
+        raise
 
 # ---------- Get Embedding ----------
 def get_embedding(text: str):
@@ -355,7 +431,10 @@ def run_llm(prompt: str) -> dict:
 
 # ========== Stage 1 Endpoint: Enrich & Embedding ==========
 @app.post("/enrich_embedding")
-async def enrich_embedding(file: UploadFile = File(...)):
+async def enrich_embedding(
+    file: UploadFile = File(...),
+    client_name: str = Header(...)
+    ):
     """
     - Enrich document embeddings by processing uploaded JSONL file. 
     - Enriched data is stored in Supabase tables: data_text and data_vector.
@@ -366,6 +445,12 @@ async def enrich_embedding(file: UploadFile = File(...)):
     - **Returns**:
         - JSONResponse: A response indicating the success or failure of the operation.
     """
+    if not client_name.strip():  # handle empty string case
+        raise HTTPException(status_code=400, detail="client_name header cannot be empty")
+
+    ensure_tables_enrich_embedd(client_name)  # Ensure tables exist for the given client_name
+    text_table  = f"public.{client_name}_{DATA_TEXT_TABLE}"
+    vector_table = f"vecs.{client_name}_{DATA_VECTOR_TABLE}"
 
     # Load JSONL from uploaded file
     def load_jsonl_from_upload(file: UploadFile):
@@ -381,6 +466,26 @@ async def enrich_embedding(file: UploadFile = File(...)):
 
         content = file.file.read().decode("utf-8").strip().splitlines()
         return [json.loads(line) for line in content if line.strip()]
+    
+    def safe_generate_parsing(json_data, openai_api_key=OPENAI_API_KEY, model_name=GPT_MODEL_NAME):
+        """
+        Wrapper for generate_parsing that skips GPT call if required fields already exist.
+        """
+        # If the JSON already contains the structured fields, just return them
+        if all(key in json_data for key in ["suggested_title", "user_search_intent", "faq_pairs", "entities"]):
+            neat_output = {
+                "index": json_data.get("index"),
+                "url": json_data.get("url"),
+                "metadata": json_data.get("metadata", {}),
+                "entities": json_data.get("entities", {}),
+                "suggested_title": json_data.get("suggested_title"),
+                "faq_pairs": json_data.get("faq_pairs", []),
+                "user_search_intent": json_data.get("user_search_intent"),
+            }
+            return neat_output, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        
+        # Otherwise, fall back to expensive GPT-based parsing
+        return generate_parsing(json_data, openai_api_key, model_name)
     
     # Save document and its embedding to Supabase
     def save_document_and_vector(record):
@@ -398,7 +503,7 @@ async def enrich_embedding(file: UploadFile = File(...)):
         now = datetime.datetime.utcnow()
 
         cur.execute(f"""
-            INSERT INTO {DATA_TEXT_TABLE} (
+            INSERT INTO {text_table} (
                 id, url, suggested_title, user_search_intent,
                 metadata_h1, metadata_h2, metadata_h3, faq_pairs, entities, created_at
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
@@ -439,9 +544,9 @@ async def enrich_embedding(file: UploadFile = File(...)):
         vecs = [v for v in [title_vec, metadata_vec, intent_vec, faq_vec, entities_vec] if v is not None]
         combined_vec = np.mean(vecs, axis=0).astype(np.float32) if vecs else None
 
-        # --- Save embeddings into vecs.data_vector_y ---
+        # --- Save embeddings into vecs.data_vector ---
         cur.execute(f"""
-            INSERT INTO {DATA_VECTOR_TABLE} (
+            INSERT INTO {vector_table} (
                 id, suggested_title, metadata, user_search_intent, faq_pairs, entities, combined_embedding
             ) VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (
@@ -463,6 +568,7 @@ async def enrich_embedding(file: UploadFile = File(...)):
         for rec in records:
             # print("📌 Record:", rec)
             parsed, response_usage = generate_parsing(rec, OPENAI_API_KEY, GPT_MODEL_NAME)
+            #parsed, response_usage = safe_generate_parsing(rec, OPENAI_API_KEY, GPT_MODEL_NAME)
             print("✅ Parsed")
             doc_id = save_document_and_vector(parsed)
             saved_ids.append(doc_id)
@@ -471,7 +577,7 @@ async def enrich_embedding(file: UploadFile = File(...)):
             "status": "success",
             "rows_inserted": len(saved_ids),
             "document_ids": saved_ids,
-            "supabase_tables": [DATA_TEXT_TABLE, DATA_VECTOR_TABLE]
+            "supabase_tables": [text_table, vector_table]
         })
     except Exception as e:
         conn.rollback()
@@ -480,7 +586,9 @@ async def enrich_embedding(file: UploadFile = File(...)):
 
 # ========== Stage 2 Endpoint ==========
 @app.post("/run_clustering")
-async def run_clustering():
+async def run_clustering(
+    client_name: str = Header(...)
+):
     """
     - Run clustering on document embeddings.
     - Performs macro and micro clustering using UMAP and HDBSCAN.
@@ -488,12 +596,32 @@ async def run_clustering():
     - Saves results to Supabase tables: cluster_macro, cluster_micro, cluster_assignments.
 
     - **Args**:
-        None
+        - client_name (str): The client name to identify the specific tables in the database.
 
     - **Returns**:
         JSONResponse: A response indicating the success or failure of the operation, including counts of clusters and assignments.
     """
+
+    if not client_name.strip():  # handle empty string case
+        raise HTTPException(status_code=400, detail="client_name header cannot be empty")
     
+    text_table = f"public.{client_name}_{DATA_TEXT_TABLE}"
+    vector_table = f"vecs.{client_name}_{DATA_VECTOR_TABLE}"
+
+    # Ensure tables exist
+    ensure_tables_exist(client_name, DATA_TEXT_TABLE)
+    ensure_tables_exist(client_name, DATA_VECTOR_TABLE, schema="vecs")
+
+    # Table naming custering result
+    macro_table = f"public.{client_name}_{CLUSTER_MACRO_TABLE}"
+    micro_table = f"public.{client_name}_{CLUSTER_MICRO_TABLE}"
+    assignments_table = f"public.{client_name}_{CLUSTER_ASSIGNMENTS_TABLE}"
+
+    # check if tables duplicate in database. If it is, abort clustering
+    print("Checking table if duplicate...")
+    check_table_duplicate(f"{client_name}_{CLUSTER_MACRO_TABLE}")
+    check_table_duplicate(f"{client_name}_{CLUSTER_MICRO_TABLE}")
+
     # Run micro clustering on a subset
     def run_micro_clustering(subset, min_cluster_size=5, n_neighbors=10, n_components=10):
         """
@@ -544,11 +672,12 @@ async def run_clustering():
                d.metadata_h3,
                d.faq_pairs AS faq_pairs_text,
                d.entities AS entities_text
-        FROM {DATA_VECTOR_TABLE} v
-        JOIN {DATA_TEXT_TABLE} d ON d.id = v.id
+        FROM {vector_table} v
+        JOIN {text_table} d ON d.id = v.id
         """
 
         # Fetch data
+        print("Fetching data from supabase...")
         df = pd.read_sql(query, engine)
         if df.empty:
             return JSONResponse(content={"status": "error", "message": "No data found"}, status_code=400)
@@ -685,12 +814,12 @@ async def run_clustering():
 
         print("\n🚀 Inserting results into Supabase...")
         # 6. Save results to Supabase
-        cur.execute(f"DROP TABLE IF EXISTS {CLUSTER_ASSIGNMENTS_TABLE}")
-        cur.execute(f"DROP TABLE IF EXISTS {CLUSTER_MACRO_TABLE}")
-        cur.execute(f"DROP TABLE IF EXISTS {CLUSTER_MICRO_TABLE}")
+        cur.execute(f"DROP TABLE IF EXISTS {assignments_table}")
+        cur.execute(f"DROP TABLE IF EXISTS {macro_table}")
+        cur.execute(f"DROP TABLE IF EXISTS {micro_table}")
 
         cur.execute(f"""
-            CREATE TABLE {CLUSTER_ASSIGNMENTS_TABLE} (
+            CREATE TABLE {assignments_table} (
                 doc_id UUID,
                 cluster_id INT,
                 microcluster_id INT,
@@ -698,7 +827,7 @@ async def run_clustering():
             )
         """)
         cur.execute(f"""
-            CREATE TABLE {CLUSTER_MACRO_TABLE_PUBLIC} (
+            CREATE TABLE {macro_table} (
                 cluster_id INT PRIMARY KEY,
                 count INT,
                 cluster_name TEXT,
@@ -708,7 +837,7 @@ async def run_clustering():
             )
         """)
         cur.execute(f"""
-            CREATE TABLE {CLUSTER_MICRO_TABLE_PUBLIC} (
+            CREATE TABLE {micro_table} (
                 cluster_id INT,
                 microcluster_id INT,
                 microcluster_name TEXT,
@@ -720,19 +849,19 @@ async def run_clustering():
         """)
 
         execute_values(cur, f"""
-            INSERT INTO {CLUSTER_MACRO_TABLE_PUBLIC} (cluster_id, count, cluster_name, representative_text, representative_keywords, centroid_embedding)
+            INSERT INTO {macro_table} (cluster_id, count, cluster_name, representative_text, representative_keywords, centroid_embedding)
             VALUES %s
         """, [(row["cluster_id"], row["count"], row["cluster_name"], row["representative_text"],
                row["representative_keywords"], row["centroid_embedding"]) for row in macro_info])
 
         execute_values(cur, f"""
-            INSERT INTO {CLUSTER_MICRO_TABLE_PUBLIC} (cluster_id, microcluster_id, microcluster_name, count, representative_text, representative_keywords, centroid_embedding)
+            INSERT INTO {micro_table} (cluster_id, microcluster_id, microcluster_name, count, representative_text, representative_keywords, centroid_embedding)
             VALUES %s
         """, [(row["cluster_id"], row["microcluster_id"], row["microcluster_name"], row["count"],
                row["representative_text"], row["representative_keywords"], row["centroid_embedding"]) for row in micro_info])
 
         execute_values(cur, f"""
-            INSERT INTO {CLUSTER_ASSIGNMENTS_TABLE} (doc_id, cluster_id, microcluster_id, probability)
+            INSERT INTO {assignments_table} (doc_id, cluster_id, microcluster_id, probability)
             VALUES %s
         """, [(row["doc_id"], row["cluster_id"], row["microcluster_id"], row["probability"]) for row in assignments])
 
@@ -753,7 +882,9 @@ async def run_clustering():
 
 # ========== Stage 3 Endpoint : Microcluster ========== 
 @app.post("/text_represent_micro")
-async def text_represent_micro():
+async def text_represent_micro(
+    client_name: str = Header(...)
+):
     """
     - Represent a microcluster of documents.
     - Summarizes and labels microclusters using LLM.
@@ -766,7 +897,20 @@ async def text_represent_micro():
     - **Returns**:
         JSONResponse: A response indicating the success or failure of the operation, including counts of processed microclusters.
     """
+    if not client_name.strip():  # handle empty string case
+        raise HTTPException(status_code=400, detail="client_name header cannot be empty")
     
+    text_table = f"public.{client_name}_{DATA_TEXT_TABLE}"
+    vector_table = f"vecs.{client_name}_{DATA_VECTOR_TABLE}"
+    assignments_table = f"public.{client_name}_{CLUSTER_ASSIGNMENTS_TABLE}"
+    macro_table = f"{client_name}_{CLUSTER_MACRO_TABLE}"
+    micro_table = f"{client_name}_{CLUSTER_MICRO_TABLE}"
+
+    ensure_tables_exist(client_name, DATA_TEXT_TABLE)
+    ensure_tables_exist(client_name, CLUSTER_ASSIGNMENTS_TABLE)
+    ensure_tables_exist(client_name, CLUSTER_MACRO_TABLE)
+    ensure_tables_exist(client_name, CLUSTER_MICRO_TABLE)
+
     # Summarization prompt builders and logic
     def build_micro_prompt(df_chunk: pd.DataFrame, cluster_id: int, micro_id: Any) -> str:
         """
@@ -941,7 +1085,7 @@ async def text_represent_micro():
             "representative_keywords": str(keywords) if keywords is not None else None,
         }
 
-        result = supabase.table(CLUSTER_MICRO_TABLE) \
+        result = supabase.table(micro_table) \
                         .update(data) \
                         .eq("cluster_id", int(cluster_id)) \
                         .eq("microcluster_id", str(microcluster_id)) \
@@ -960,9 +1104,9 @@ async def text_represent_micro():
         d.user_search_intent AS user_search_intent_text,
         d.entities AS entities_text,
         v.combined_embedding AS combined_embedding
-        FROM {CLUSTER_ASSIGNMENTS_TABLE} ca
-        JOIN {DATA_TEXT_TABLE} d ON d.id = ca.doc_id
-        JOIN {DATA_VECTOR_TABLE} v ON v.id = ca.doc_id
+        FROM {assignments_table} ca
+        JOIN {text_table} d ON d.id = ca.doc_id
+        JOIN {vector_table} v ON v.id = ca.doc_id
         """
 
         print("\n🚀 Processing microclusters...")
@@ -998,7 +1142,9 @@ async def text_represent_micro():
 
 # # ========== Stage 3 Endpoint : Macrocluster ==========
 @app.post("/text_represent_macro")
-async def text_represent_macro():
+async def text_represent_macro(
+    client_name: str = Header(...)
+):
     """
     - Represent a macrocluster of documents.
     - Summarizes and labels macroclusters using LLM.
@@ -1010,6 +1156,20 @@ async def text_represent_macro():
     - **Returns**:
         JSONResponse: A response indicating the success or failure of the operation, including counts of processed macroclusters.
     """
+
+    if not client_name.strip():  # handle empty string case
+        raise HTTPException(status_code=400, detail="client_name header cannot be empty")
+    
+    text_table = f"public.{client_name}_{DATA_TEXT_TABLE}"
+    vector_table = f"vecs.{client_name}_{DATA_VECTOR_TABLE}"
+    assignments_table = f"public.{client_name}_{CLUSTER_ASSIGNMENTS_TABLE}"
+    macro_table = f"{client_name}_{CLUSTER_MACRO_TABLE}"
+    micro_table = f"{client_name}_{CLUSTER_MICRO_TABLE}"
+
+    ensure_tables_exist(client_name, DATA_TEXT_TABLE)
+    ensure_tables_exist(client_name, CLUSTER_ASSIGNMENTS_TABLE)
+    ensure_tables_exist(client_name, CLUSTER_MACRO_TABLE)
+    ensure_tables_exist(client_name, CLUSTER_MICRO_TABLE)
 
     # Fetch microclusters for a given cluster_id
     def get_microclusters_for_cluster(cluster_id: int):
@@ -1023,7 +1183,7 @@ async def text_represent_macro():
             list: A list of microclusters with their details.
         """
 
-        response = supabase.table(CLUSTER_MICRO_TABLE).select(
+        response = supabase.table(micro_table).select(
             "microcluster_id, microcluster_name, representative_text, representative_keywords"
         ).eq("cluster_id", cluster_id).execute()
 
@@ -1213,7 +1373,7 @@ async def text_represent_macro():
             "representative_keywords": keywords_str,
         }
 
-        result = supabase.table(CLUSTER_MACRO_TABLE).upsert(data).execute()
+        result = supabase.table(macro_table).upsert(data).execute()
         print("✅ Saved to Supabase:", result)
 
     # Summarize a macrocluster with batching and reduction
@@ -1268,7 +1428,7 @@ async def text_represent_macro():
 
     try:
         # 1. Fetch macroclusters
-        response = supabase.table(CLUSTER_MACRO_TABLE).select("cluster_id").execute()
+        response = supabase.table(macro_table).select("cluster_id").execute()
         if not response.data:
             return JSONResponse(content={"status": "error", "message": "No macroclusters found"}, status_code=400)
 
@@ -1296,7 +1456,10 @@ async def text_represent_macro():
 
 # Endpoint: New url
 @app.post("/search_cluster")
-async def search_cluster(file: UploadFile = File(...)):
+async def search_cluster( 
+    client_name: str = Header(...),
+    file: UploadFile = File(...)
+    ):
     """
     - Search for a cluster in the database.
     - Accepts a JSON or JSONL file containing one or more records.
@@ -1309,6 +1472,15 @@ async def search_cluster(file: UploadFile = File(...)):
     - **Returns**:
         - JSONResponse: A response containing the classification results for each record.
     """
+
+    if not client_name.strip():  # handle empty string case
+        raise HTTPException(status_code=400, detail="client_name header cannot be empty")
+    
+    text_table = f"public.{client_name}_{DATA_TEXT_TABLE}"
+    vector_table = f"vecs.{client_name}_{DATA_VECTOR_TABLE}"
+    assignments_table = f"public.{client_name}_{CLUSTER_ASSIGNMENTS_TABLE}"
+    macro_table = f"public.{client_name}_{CLUSTER_MACRO_TABLE}"
+    micro_table = f"public.{client_name}_{CLUSTER_MICRO_TABLE}"
 
     # Load json
     def load_json(uploaded_file: UploadFile):
@@ -1419,13 +1591,14 @@ async def search_cluster(file: UploadFile = File(...)):
     try:
         # Load cluster data from Supabase
         print("🔄 Connecting to Supabase...")
-        macro_df = pd.read_sql(f"SELECT * FROM {CLUSTER_MACRO_TABLE_PUBLIC}", engine)
-        micro_df = pd.read_sql(f"SELECT * FROM {CLUSTER_MICRO_TABLE_PUBLIC}", engine)
+        # Check if micro, macro, and assignment table exist. Otherwise, exception
+        macro_df = pd.read_sql(f"SELECT * FROM {macro_table}", engine)
+        micro_df = pd.read_sql(f"SELECT * FROM {micro_table}", engine)
         assign_df = pd.read_sql(f"""
             SELECT a.doc_id, a.cluster_id, a.microcluster_id, d.url, 
                    d.suggested_title, d.user_search_intent, d.entities
-            FROM {CLUSTER_ASSIGNMENTS_TABLE} a
-            JOIN {DATA_TEXT_TABLE} d ON a.doc_id = d.id
+            FROM {assignments_table} a
+            JOIN {text_table} d ON a.doc_id = d.id
         """, engine)
 
         # Convert embeddings
